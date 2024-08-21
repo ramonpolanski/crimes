@@ -5,27 +5,26 @@ import customtkinter as ctk
 from tkinter import ttk
 from tkinter import messagebox
 
+# Database Functions
+
 def create_db():
     conn = sqlite3.connect('crime_investigation.db')
     cursor = conn.cursor()
 
     cursor.execute('DROP TABLE IF EXISTS Crimes')
-    cursor.execute('DROP TABLE IF EXISTS Evidence')
-    cursor.execute('DROP TABLE IF EXISTS Officers')
-    cursor.execute('DROP TABLE IF EXISTS Suspects')
-
     cursor.execute('''
     CREATE TABLE Crimes (
-        CrimeID INTEGER PRIMARY KEY,
+        CrimeID INTEGER PRIMARY KEY AUTOINCREMENT,
         Type TEXT,
         Date TEXT,
         Location TEXT
     );
     ''')
 
+    cursor.execute('DROP TABLE IF EXISTS Evidence')
     cursor.execute('''
     CREATE TABLE Evidence (
-        EvidenceID INTEGER PRIMARY KEY,
+        EvidenceID INTEGER PRIMARY KEY AUTOINCREMENT,
         Type TEXT,
         Description TEXT,
         CrimeID INTEGER,
@@ -33,9 +32,10 @@ def create_db():
     );
     ''')
 
+    cursor.execute('DROP TABLE IF EXISTS Officers')
     cursor.execute('''
     CREATE TABLE Officers (
-        OfficerID INTEGER PRIMARY KEY,
+        OfficerID INTEGER PRIMARY KEY AUTOINCREMENT,
         Name TEXT,
         Rank TEXT,
         Department TEXT,
@@ -44,9 +44,10 @@ def create_db():
     );
     ''')
 
+    cursor.execute('DROP TABLE IF EXISTS Suspects')
     cursor.execute('''
     CREATE TABLE Suspects (
-        SuspectID INTEGER PRIMARY KEY,
+        SuspectID INTEGER PRIMARY KEY AUTOINCREMENT,
         Name TEXT,
         Age INTEGER,
         Description TEXT,
@@ -55,6 +56,7 @@ def create_db():
     );
     ''')
 
+    # Sample data
     crime_types = ['187 - Murder', '211 - Robbery', '459 - Burglary', '488 - Petty Theft', '245 - Assault']
     locations = ['Detroit', 'Los Angeles', 'New York', 'Chicago', 'Houston']
     evidence_types = ['Weapon', 'DNA', 'Fingerprint', 'Video Surveillance', 'Eyewitness']
@@ -73,6 +75,7 @@ def create_db():
     start_date = datetime.datetime(2019, 1, 1)
     end_date = datetime.datetime.today()
 
+    # Insert random data
     for crime_id in range(1, 36):
         crime_type = random.choice(crime_types)
         location = random.choice(locations)
@@ -123,36 +126,71 @@ def fetch_data(query, param=()):
     conn.close()
     return result
 
-def show_crime_details(crime_id):
-    crime = fetch_data('SELECT * FROM Crimes WHERE CrimeID = ?', (crime_id,))
-    evidence = fetch_data('SELECT * FROM Evidence WHERE CrimeID = ?', (crime_id,))
-    officer = fetch_data('SELECT * FROM Officers WHERE CrimeID = ?', (crime_id,))
-    suspect = fetch_data('SELECT * FROM Suspects WHERE CrimeID = ?', (crime_id,))
+def execute_query(query, param=()):
+    conn = sqlite3.connect('crime_investigation.db')
+    cursor = conn.cursor()
+    cursor.execute(query, param)
+    conn.commit()
+    conn.close()
 
-    details = f'''
-    Crime Details:
-    ID: {crime[0][0]}, Type: {crime[0][1]}, Date: {crime[0][2]}, Location: {crime[0][3]}
+# GUI Functions
 
-    Evidence Details:
-    ID: {evidence[0][0]}, Type: {evidence[0][1]}, Description: {evidence[0][2]}
+def populate_treeview():
+    crime_tree.delete(*crime_tree.get_children())
+    for row in fetch_data('SELECT * FROM Crimes'):
+        crime_tree.insert('', 'end', values=row)
 
-    Officer Details:
-    ID: {officer[0][0]}, Name: {officer[0][1]}, Rank: {officer[0][2]}, Department: {officer[0][3]}
+def add_crime():
+    type = type_entry.get()
+    date = date_entry.get()
+    location = location_entry.get()
+    
+    if type and date and location:
+        execute_query('INSERT INTO Crimes (Type, Date, Location) VALUES (?, ?, ?)', (type, date, location))
+        populate_treeview()
+    else:
+        messagebox.showerror("Input Error", "All fields must be filled out.")
 
-    Suspect Details:
-    ID: {suspect[0][0]}, Name: {suspect[0][1]}, Age: {suspect[0][2]}, Description: {suspect[0][3]}
-    '''
-    messagebox.showinfo("Crime Details", details)
+def update_crime():
+    selected = crime_tree.selection()
+    if not selected:
+        messagebox.showerror("Selection Error", "Please select a record to update.")
+        return
+
+    crime_id = crime_tree.item(selected[0], 'values')[0]
+    type = type_entry.get()
+    date = date_entry.get()
+    location = location_entry.get()
+
+    if type and date and location:
+        execute_query('UPDATE Crimes SET Type = ?, Date = ?, Location = ? WHERE CrimeID = ?', 
+                      (type, date, location, crime_id))
+        populate_treeview()
+    else:
+        messagebox.showerror("Input Error", "All fields must be filled out.")
+
+def delete_crime():
+    selected = crime_tree.selection()
+    if not selected:
+        messagebox.showerror("Selection Error", "Please select a record to delete.")
+        return
+
+    crime_id = crime_tree.item(selected[0], 'values')[0]
+    execute_query('DELETE FROM Crimes WHERE CrimeID = ?', (crime_id,))
+    populate_treeview()
 
 def on_crime_select(event):
     selected = crime_tree.selection()
     if selected:
-        crime_id = crime_tree.item(selected[0], 'values')[0]
-        show_crime_details(crime_id)
+        selected_record = crime_tree.item(selected[0], 'values')
+        type_entry.delete(0, ctk.END)
+        type_entry.insert(0, selected_record[1])
+        date_entry.delete(0, ctk.END)
+        date_entry.insert(0, selected_record[2])
+        location_entry.delete(0, ctk.END)
+        location_entry.insert(0, selected_record[3])
 
-def populate_treeview():
-    for row in fetch_data('SELECT * FROM Crimes'):
-        crime_tree.insert('', 'end', values=row)
+# Main Application
 
 def main():
     create_db()
@@ -160,20 +198,19 @@ def main():
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("dark-blue")
 
+    global root, crime_tree, type_entry, date_entry, location_entry
+
     root = ctk.CTk()
     root.title("Crime Investigation Database")
     root.geometry("800x600")
 
+    # Treeview Styles
     style = ttk.Style()
     style.theme_use("clam")
-    style.configure("Treeview",
-                    background="#2e2e2e",
-                    foreground="white",
-                    rowheight=25,
-                    fieldbackground="#2e2e2e")
+    style.configure("Treeview", background="#2e2e2e", foreground="white", rowheight=25, fieldbackground="#2e2e2e")
     style.map('Treeview', background=[('selected', '#1f538d')])
 
-    global crime_tree
+    # Treeview
     crime_tree = ttk.Treeview(root, columns=("CrimeID", "Type", "Date", "Location"), show="headings")
     crime_tree.heading("CrimeID", text="Crime ID")
     crime_tree.heading("Type", text="Type")
@@ -182,8 +219,36 @@ def main():
     crime_tree.bind('<<TreeviewSelect>>', on_crime_select)
     crime_tree.pack(fill=ctk.BOTH, expand=True, padx=10, pady=10)
 
-    populate_treeview()
+    # Input Fields
+    input_frame = ctk.CTkFrame(root)
+    input_frame.pack(pady=10)
 
+    ctk.CTkLabel(input_frame, text="Type:").grid(row=0, column=0, padx=5, pady=5)
+    type_entry = ctk.CTkEntry(input_frame)
+    type_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    ctk.CTkLabel(input_frame, text="Date (YYYY-MM-DD):").grid(row=1, column=0, padx=5, pady=5)
+    date_entry = ctk.CTkEntry(input_frame)
+    date_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    ctk.CTkLabel(input_frame, text="Location:").grid(row=2, column=0, padx=5, pady=5)
+    location_entry = ctk.CTkEntry(input_frame)
+    location_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    # Buttons
+    button_frame = ctk.CTkFrame(root)
+    button_frame.pack(pady=10)
+
+    add_button = ctk.CTkButton(button_frame, text="Add Crime", command=add_crime)
+    add_button.grid(row=0, column=0, padx=5, pady=5)
+
+    update_button = ctk.CTkButton(button_frame, text="Update Crime", command=update_crime)
+    update_button.grid(row=0, column=1, padx=5, pady=5)
+
+    delete_button = ctk.CTkButton(button_frame, text="Delete Crime", command=delete_crime)
+    delete_button.grid(row=0, column=2, padx=5, pady=5)
+
+    populate_treeview()
     root.mainloop()
 
 if __name__ == '__main__':
