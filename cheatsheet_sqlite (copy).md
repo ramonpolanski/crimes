@@ -18,7 +18,7 @@ then you need to do
 .open my_database.db
 ```
 
-Otherwise a in-memory database will be used which
+Otherwise an in-memory database will be used which
 is stored in RAM - all will be lost on session end.
 
 ##########################
