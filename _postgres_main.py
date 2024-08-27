@@ -5,29 +5,23 @@ import datetime
 import os
 
 def create_database_if_not_exists(dbname, user, password, host, port):
-    # Connect to the default database (postgres) to create a new database
     conn = psycopg2.connect(dbname='postgres', user=user, password=password, host=host, port=port)
-    conn.autocommit = True  # Allow creation of the database
+    conn.autocommit = True
     cursor = conn.cursor()
 
-    # Check if the database exists
     cursor.execute(f"SELECT 1 FROM pg_catalog.pg_database WHERE datname = '{dbname}';")
     exists = cursor.fetchone()
 
     if not exists:
-        cursor.execute(sql.SQL("CREATE DATABASE {}").format(
-            sql.Identifier(dbname)
-        ))
+        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
         print(f"Database '{dbname}' created.")
     else:
         print(f"Database '{dbname}' already exists.")
 
-    # Close connection to the default database
     cursor.close()
     conn.close()
 
 def connect_to_db(dbname, user, password, host, port):
-    # Connect to your actual database
     return psycopg2.connect(dbname=dbname, user=user, password=password, host=host, port=port)
 
 def create_db():
@@ -37,20 +31,16 @@ def create_db():
     port = '5432'
     dbname = 'crime_investigation'
 
-    # Ensure the database exists
     create_database_if_not_exists(dbname, user, password, host, port)
 
-    # Connect to the database
     conn = connect_to_db(dbname, user, password, host, port)
     cursor = conn.cursor()
 
-    # Drop tables if they exist
     cursor.execute('DROP TABLE IF EXISTS Crimes CASCADE')
     cursor.execute('DROP TABLE IF EXISTS Evidence CASCADE')
     cursor.execute('DROP TABLE IF EXISTS Officers CASCADE')
     cursor.execute('DROP TABLE IF EXISTS Suspects CASCADE')
 
-    # Create tables
     cursor.execute('''
     CREATE TABLE Crimes (
         CrimeID SERIAL PRIMARY KEY,
@@ -89,7 +79,6 @@ def create_db():
     );
     ''')
 
-    # Sample data
     crime_types = ['187 - Murder', '211 - Robbery', '459 - Burglary', '488 - Petty Theft', '245 - Assault']
     locations = ['Detroit', 'Los Angeles', 'New York', 'Chicago', 'Houston']
     evidence_types = ['Weapon', 'DNA', 'Fingerprint', 'Video Surveillance', 'Eyewitness']
@@ -101,19 +90,16 @@ def create_db():
     suspect_descriptions = ['blonde, heavy smoker', 'tall, muscular', 'short, thin', 'medium height, athletic', 'scar on left cheek']
 
     def random_date(start, end):
-        return start + datetime.timedelta(
-            seconds=random.randint(0, int((end - start).total_seconds())),
-        )
+        return start + datetime.timedelta(seconds=random.randint(0, int((end - start).total_seconds())))
 
     start_date = datetime.datetime(2019, 1, 1)
     end_date = datetime.datetime.today()
 
-    # Insert random data
     for _ in range(1, 36):
         crime_type = random.choice(crime_types)
         location = random.choice(locations)
-        crime_date = random_date(start_date, end_date).strftime('%Y-%m-%d')
-        
+        crime_date = random_date(start_date, end_date).date()
+
         cursor.execute('''
         INSERT INTO Crimes (Type, Date, Location) 
         VALUES (%s, %s, %s) RETURNING CrimeID;
@@ -122,34 +108,31 @@ def create_db():
 
         evidence_type = random.choice(evidence_types)
         evidence_description = random.choice(descriptions)
-        
+
         cursor.execute('''
         INSERT INTO Evidence (Type, Description, CrimeID) 
         VALUES (%s, %s, %s);
         ''', (evidence_type, evidence_description, crime_id))
-        
+
         officer_name = random.choice(officer_names)
         officer_rank = random.choice(officer_ranks)
         officer_department = random.choice(officer_departments)
-        
+
         cursor.execute('''
         INSERT INTO Officers (Name, Rank, Department, CrimeID) 
         VALUES (%s, %s, %s, %s);
         ''', (officer_name, officer_rank, officer_department, crime_id))
-        
+
         suspect_name = random.choice(suspect_names)
         suspect_age = random.randint(18, 65)
         suspect_description = random.choice(suspect_descriptions)
-        
+
         cursor.execute('''
         INSERT INTO Suspects (Name, Age, Description, CrimeID) 
         VALUES (%s, %s, %s, %s);
         ''', (suspect_name, suspect_age, suspect_description, crime_id))
 
-    # Commit the transactions
     conn.commit()
-
-    # Close the connection
     conn.close()
 
 def display_related_data(crime_id):
@@ -159,7 +142,7 @@ def display_related_data(crime_id):
     cursor.execute('SELECT * FROM Crimes WHERE CrimeID = %s', (crime_id,))
     crime = cursor.fetchone()
     print("\nCrime Details:")
-    print(f"ID: {crime[0]}, Type: {crime[1]}, Date: {crime[2]}, Location: {crime[3]}")
+    print(f"ID: {crime[0]}, Type: {crime[1]}, Date: {crime[2].strftime('%Y-%m-%d')}, Location: {crime[3]}")
     input("\nPress Enter to continue...")
 
     cursor.execute('SELECT * FROM Evidence WHERE CrimeID = %s', (crime_id,))
@@ -197,12 +180,21 @@ def search_and_display(query, param):
         return
 
     for i, result in enumerate(results, 1):
-        print(f"{i}. {result}")
+        crime_id, crime_type, crime_date, location = result
+        print(f"{i}. ID: {crime_id}, Type: {crime_type}, Date: {crime_date.strftime('%Y-%m-%d')}, Location: {location}")
 
-    choice = int(input("\nSelect the number of the entry to view more details: "))
-    selected = results[choice - 1]
+    while True:
+        try:
+            choice = int(input("\nSelect the number of the entry to view more details: "))
+            if 1 <= choice <= len(results):
+                selected = results[choice - 1]
+                display_related_data(selected[0])
+                break
+            else:
+                print(f"Please enter a number between 1 and {len(results)}.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
 
-    display_related_data(selected[0])
     conn.close()
 
 def show_unique_values_and_get_selection(query):
@@ -210,21 +202,122 @@ def show_unique_values_and_get_selection(query):
     cursor = conn.cursor()
     cursor.execute(query)
     results = cursor.fetchall()
-    
+
     if not results:
         print("No data available.")
         input("\nPress Enter to continue...")
         conn.close()
         return None
-    
+
     for i, result in enumerate(results, 1):
         print(f"{i}. {result[0]}")
 
-    choice = int(input("\nSelect the number of your choice: "))
-    selected_value = results[choice - 1][0]
+    while True:
+        try:
+            choice = int(input("\nSelect the number of your choice: "))
+            if 1 <= choice <= len(results):
+                selected_value = results[choice - 1][0]
+                conn.close()
+                return selected_value
+            else:
+                print(f"Please enter a number between 1 and {len(results)}.")
+        except ValueError:
+            print("Invalid input. Please enter a valid number.")
 
+def add_entry():
+    conn = connect_to_db('crime_investigation', 'postgres', 'password', 'localhost', '5432')
+    cursor = conn.cursor()
+
+    crime_type = input("Enter Crime Type: ")
+    crime_date = input("Enter Crime Date (YYYY-MM-DD): ")
+    location = input("Enter Crime Location: ")
+
+    cursor.execute('''
+    INSERT INTO Crimes (Type, Date, Location) 
+    VALUES (%s, %s, %s) RETURNING CrimeID;
+    ''', (crime_type, crime_date, location))
+    crime_id = cursor.fetchone()[0]
+
+    evidence_type = input("Enter Evidence Type: ")
+    evidence_description = input("Enter Evidence Description: ")
+
+    cursor.execute('''
+    INSERT INTO Evidence (Type, Description, CrimeID) 
+    VALUES (%s, %s, %s);
+    ''', (evidence_type, evidence_description, crime_id))
+
+    officer_name = input("Enter Officer Name: ")
+    officer_rank = input("Enter Officer Rank: ")
+    officer_department = input("Enter Officer Department: ")
+
+    cursor.execute('''
+    INSERT INTO Officers (Name, Rank, Department, CrimeID) 
+    VALUES (%s, %s, %s, %s);
+    ''', (officer_name, officer_rank, officer_department, crime_id))
+
+    suspect_name = input("Enter Suspect Name: ")
+    suspect_age = input("Enter Suspect Age: ")
+    suspect_description = input("Enter Suspect Description: ")
+
+    cursor.execute('''
+    INSERT INTO Suspects (Name, Age, Description, CrimeID) 
+    VALUES (%s, %s, %s, %s);
+    ''', (suspect_name, suspect_age, suspect_description, crime_id))
+
+    conn.commit()
+    print("Entry added successfully.")
+    input("\nPress Enter to continue...")
     conn.close()
-    return selected_value
+
+def edit_entry():
+    conn = connect_to_db('crime_investigation', 'postgres', 'password', 'localhost', '5432')
+    cursor = conn.cursor()
+
+    crime_id = input("Enter Crime ID to edit: ")
+    cursor.execute('SELECT * FROM Crimes WHERE CrimeID = %s', (crime_id,))
+    crime = cursor.fetchone()
+
+    if not crime:
+        print("Crime not found.")
+        input("\nPress Enter to continue...")
+        conn.close()
+        return
+
+    new_crime_type = input(f"Enter new Crime Type (current: {crime[1]}): ")
+    new_crime_date = input(f"Enter new Crime Date (current: {crime[2].strftime('%Y-%m-%d')}): ")
+    new_location = input(f"Enter new Crime Location (current: {crime[3]}): ")
+
+    cursor.execute('''
+    UPDATE Crimes 
+    SET Type = %s, Date = %s, Location = %s 
+    WHERE CrimeID = %s;
+    ''', (new_crime_type, new_crime_date, new_location, crime_id))
+
+    conn.commit()
+    print("Entry updated successfully.")
+    input("\nPress Enter to continue...")
+    conn.close()
+
+def delete_entry():
+    conn = connect_to_db('crime_investigation', 'postgres', 'password', 'localhost', '5432')
+    cursor = conn.cursor()
+
+    crime_id = input("Enter Crime ID to delete: ")
+    cursor.execute('SELECT * FROM Crimes WHERE CrimeID = %s', (crime_id,))
+    crime = cursor.fetchone()
+
+    if not crime:
+        print("Crime not found.")
+        input("\nPress Enter to continue...")
+        conn.close()
+        return
+
+    cursor.execute('DELETE FROM Crimes WHERE CrimeID = %s;', (crime_id,))
+    conn.commit()
+
+    print("Entry deleted successfully.")
+    input("\nPress Enter to continue...")
+    conn.close()
 
 def menu():
     while True:
@@ -238,7 +331,10 @@ def menu():
         6. Search by Evidence (Description)
         7. Search by Officer (Name)
         8. Search by Suspect (Name)
-        9. Exit
+        9. Add Entry
+        10. Edit Entry
+        11. Delete Entry
+        12. Exit
         ''')
         choice = input('Enter your choice: ')
 
@@ -274,6 +370,12 @@ def menu():
             if suspect_name:
                 search_and_display('SELECT * FROM Suspects WHERE Name = %s', (suspect_name,))
         elif choice == '9':
+            add_entry()
+        elif choice == '10':
+            edit_entry()
+        elif choice == '11':
+            delete_entry()
+        elif choice == '12':
             break
         else:
             print("Invalid choice, please try again.")
