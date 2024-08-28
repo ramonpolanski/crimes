@@ -1,28 +1,103 @@
+import psycopg2
+import random
+import datetime
 import customtkinter as ctk
 from tkinter import ttk
 from tkinter import messagebox
-import importlib.util
-import sys
+from psycopg2 import sql
 
-# Dynamically import the _postgres_main module
-spec = importlib.util.spec_from_file_location("postgres_main", "./_postgres_main.py")
-postgres_main = importlib.util.module_from_spec(spec)
-sys.modules["postgres_main"] = postgres_main
-spec.loader.exec_module(postgres_main)
+# Database Functions
 
-# Import only the functions that exist in _postgres_main.py
-connect_to_db = postgres_main.connect_to_db
-execute_query = postgres_main.execute_query
-create_db = postgres_main.create_db
+def connect_to_db():
+    try:
+        conn = psycopg2.connect(
+            dbname='crime_investigation',
+            user='postgres',
+            password='password',
+            host='localhost',
+            port='5432'
+        )
+        return conn
+    except psycopg2.Error as e:
+        messagebox.showerror("Database Connection Error", f"An error occurred: {e}")
+        return None
 
-# Add the fetch_data function here since it's not in _postgres_main.py
+def create_db():
+    conn = connect_to_db()
+    if not conn:
+        return
+    
+    cursor = conn.cursor()
+
+    # Create tables
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Crimes (
+        CrimeID SERIAL PRIMARY KEY,
+        Type TEXT,
+        Date DATE,
+        Location TEXT
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Evidence (
+        EvidenceID SERIAL PRIMARY KEY,
+        Type TEXT,
+        Description TEXT,
+        CrimeID INTEGER REFERENCES Crimes(CrimeID)
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Officers (
+        OfficerID SERIAL PRIMARY KEY,
+        Name TEXT,
+        Rank TEXT,
+        Department TEXT,
+        CrimeID INTEGER REFERENCES Crimes(CrimeID)
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS Suspects (
+        SuspectID SERIAL PRIMARY KEY,
+        Name TEXT,
+        Age INTEGER,
+        Description TEXT,
+        CrimeID INTEGER REFERENCES Crimes(CrimeID)
+    );
+    ''')
+
+    conn.commit()
+    conn.close()
+
 def fetch_data(query, param=()):
     conn = connect_to_db()
+    if not conn:
+        return []
+
     cursor = conn.cursor()
     cursor.execute(query, param)
     result = cursor.fetchall()
     conn.close()
     return result
+
+def execute_query(query, param=()):
+    conn = connect_to_db()
+    if not conn:
+        return
+    
+    cursor = conn.cursor()
+    try:
+        cursor.execute(query, param)
+        conn.commit()
+    except psycopg2.Error as e:
+        conn.rollback()
+        messagebox.showerror("Database Error", f"An error occurred: {e}")
+    finally:
+        conn.close()
+
+# GUI Functions
 
 def populate_treeview():
     crime_tree.delete(*crime_tree.get_children())
@@ -34,9 +109,16 @@ def add_crime():
     date = date_entry.get()
     location = location_entry.get()
 
+    try:
+        datetime.datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        messagebox.showerror("Input Error", "Date must be in YYYY-MM-DD format.")
+        return
+
     if type and date and location:
         execute_query('INSERT INTO Crimes (Type, Date, Location) VALUES (%s, %s, %s)', (type, date, location))
         populate_treeview()
+        messagebox.showinfo("Success", "Crime added successfully.")
     else:
         messagebox.showerror("Input Error", "All fields must be filled out.")
 
@@ -51,10 +133,17 @@ def update_crime():
     date = date_entry.get()
     location = location_entry.get()
 
+    try:
+        datetime.datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        messagebox.showerror("Input Error", "Date must be in YYYY-MM-DD format.")
+        return
+
     if type and date and location:
         execute_query('UPDATE Crimes SET Type = %s, Date = %s, Location = %s WHERE CrimeID = %s', 
                       (type, date, location, crime_id))
         populate_treeview()
+        messagebox.showinfo("Success", "Crime updated successfully.")
     else:
         messagebox.showerror("Input Error", "All fields must be filled out.")
 
@@ -67,6 +156,7 @@ def delete_crime():
     crime_id = crime_tree.item(selected[0], 'values')[0]
     execute_query('DELETE FROM Crimes WHERE CrimeID = %s', (crime_id,))
     populate_treeview()
+    messagebox.showinfo("Success", "Crime deleted successfully.")
 
 def on_crime_select(event):
     selected = crime_tree.selection()
@@ -78,6 +168,8 @@ def on_crime_select(event):
         date_entry.insert(0, selected_record[2])
         location_entry.delete(0, ctk.END)
         location_entry.insert(0, selected_record[3])
+
+# Main Application
 
 def main():
     create_db()
