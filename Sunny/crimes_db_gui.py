@@ -1,10 +1,9 @@
 import psycopg2
-import random
 import datetime
 import customtkinter as ctk
 from tkinter import ttk
 from tkinter import messagebox
-from psycopg2 import sql
+
 
 # Database Functions
 
