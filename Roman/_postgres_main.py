@@ -265,7 +265,7 @@ def add_entry():
     ''', (suspect_name, suspect_age, suspect_description, crime_id))
 
     conn.commit()
-    print("Entry added successfully.")
+    print("Entry added addsuccessfully.")
     input("\nPress Enter to continue...")
     conn.close()
 
